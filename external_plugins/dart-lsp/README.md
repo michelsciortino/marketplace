@@ -31,6 +31,24 @@ Verify the language server is available:
 dart language-server --help
 ```
 
+## Custom Dart Binary (Version Managers)
+
+If you use a version manager like [puro](https://puro.dev/) or [fvm](https://github.com/leoafarias/fvm),
+set the `DART_EXECUTABLE` environment variable in your Claude Code settings (`~/.claude/settings.json`):
+
+```json
+{
+  "env": {
+    "DART_EXECUTABLE": "puro dart"
+  }
+}
+```
+
+Users with a standard Dart/Flutter installation don't need to change anything —
+the plugin falls back to `dart` from `PATH`.
+
+**Windows:** Requires `sh` to be available (e.g. via Git Bash or WSL).
+
 ## More Information
 - [Dart SDK](https://dart.dev/get-dart)
 - [Flutter SDK](https://flutter.dev/docs/get-started/install)

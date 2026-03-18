@@ -1,13 +1,14 @@
 {
   "name": "dart-lsp",
   "description": "Dart/Flutter language server plugin for Claude",
+  "version": "1.0.1",
   "author": {
     "name": "@michelsciortino"
   },
   "lspServers": {
     "dart": {
-      "command": "dart",
-      "args": ["language-server"],
+      "command": "sh",
+      "args": ["-c", "exec ${DART_EXECUTABLE:-dart} language-server"],
       "extensionToLanguage": {
         ".dart": "dart"
       }
