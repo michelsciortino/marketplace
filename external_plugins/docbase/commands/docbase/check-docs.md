@@ -42,14 +42,31 @@ Check documentation cross-reference consistency across the entire project.
    ```
    Parse the JSON output. Store `undeclared_references`, `broken_links`, and `valid_edges`.
 
-5. **Report mechanical findings** to the user:
-   - If both counts are 0: "No mechanical link issues found."
-   - Otherwise: "Found {undeclared_references} undeclared reference(s) and {broken_links} broken link(s). Issue files written to {ISSUES_DIR}."
+5. **Report and interactively fix mechanical findings**:
+   - If both counts are 0: "No mechanical link issues found." Proceed to step 6.
+   - Otherwise: tell the user "Found {undeclared_references} undeclared reference(s) and {broken_links} broken link(s)."
+     Ask: "Would you like to fix them one by one before continuing? (yes/no)"
+     - If **yes**: for each issue file in ISSUES_DIR with type `undeclared-reference` or `broken-link`:
+       a. Read the issue file. Extract `related_doc`, `line_number`, `type`, and the ## Issue section.
+       b. Present to the user:
+          ```
+          Issue {i}/{total}: [{type}]
+          File: {related_doc}, line {line_number}
+          {## Issue content}
+          ```
+       c. Ask: "Fix, skip, or stop?"
+          - **Fix**: open `{related_doc}` at line `{line_number}`, make the necessary correction, confirm with the user.
+          - **Skip**: move to the next issue.
+          - **Stop**: break out of the loop.
+       After the loop: re-run `check-links.sh` with the same arguments to update the counts and `valid_edges`.
+     - If **no**: continue with the existing counts and `valid_edges`.
 
 6. **Filter affected edges**: from `valid_edges`, keep only those where `"affected": true`.
    - If none remain: tell the user "No affected edges to check semantically." Skip to step 8.
 
-7. **Spawn a sub-agent** using the Agent tool with this prompt (substitute all values before sending — no placeholders):
+7. **Iterative semantic check**: ask the user "Found {N} affected edge(s). Run semantic analysis? (yes/no)"
+   - If **no**: skip to step 8 with no sub-agent results.
+   - If **yes**: for each affected edge one at a time, spawn a sub-agent using the Agent tool with this prompt (substitute all values before sending — no placeholders). After each edge, present the result and ask "Continue to next edge? (yes/no)" before proceeding.
    ```
    You are the DocBase semantic consistency checker.
 

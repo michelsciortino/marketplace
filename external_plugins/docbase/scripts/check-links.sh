@@ -34,7 +34,7 @@ trap 'rm -rf "$TMPDIR_STATE"' EXIT
 #   current_issues/  — one file per issue filename (presence = registered)
 #   fm_targets/      — one file per source, containing space-sep abs fm targets
 #   all_targets/     — one file per source, containing space-sep abs all targets
-mkdir -p "$TMPDIR_STATE/current_issues" "$TMPDIR_STATE/fm_targets" "$TMPDIR_STATE/all_targets"
+mkdir -p "$TMPDIR_STATE/current_issues" "$TMPDIR_STATE/fm_targets" "$TMPDIR_STATE/all_targets" "$TMPDIR_STATE/link_lines"
 
 # Safe key: encode a filepath to a filesystem-safe name using md5/md5sum
 encode_key() {
@@ -84,6 +84,19 @@ get_all_targets() {
   fi
 }
 
+# link_lines: source_abs:target_abs → line number where the link appears
+set_link_line() {
+  local k; k=$(encode_key "$1:$2")
+  printf '%s\n' "$3" > "$TMPDIR_STATE/link_lines/$k"
+}
+
+get_link_line() {
+  local k; k=$(encode_key "$1:$2")
+  if [[ -f "$TMPDIR_STATE/link_lines/$k" ]]; then
+    cat "$TMPDIR_STATE/link_lines/$k"
+  fi
+}
+
 # ─── helpers ────────────────────────────────────────────────────────────────
 
 # Returns 0 if the file has DocBase frontmatter (any of: related, implementation, layer, status)
@@ -98,10 +111,12 @@ has_docbase_frontmatter() {
 
 # Extract paths from related: frontmatter block.
 # Paths are relative to PROJECT_ROOT (docbase convention).
+# Outputs: linenum TAB path
 extract_frontmatter_links() {
   local file="$1"
-  local block=0 in_related=0
+  local block=0 in_related=0 linenum=0
   while IFS= read -r line; do
+    linenum=$((linenum + 1))
     if [[ "$line" == "---" ]]; then
       block=$((block + 1))
       [[ $block -eq 2 ]] && break
@@ -113,7 +128,8 @@ extract_frontmatter_links() {
     fi
     if [[ $in_related -eq 1 ]]; then
       if [[ "$line" =~ ^[[:space:]]+-[[:space:]] ]]; then
-        printf '%s\n' "$line" | sed -n 's/.*\[.*\](\([^)]*\)).*/\1/p'
+        path=$(printf '%s\n' "$line" | sed -n 's/.*\[.*\](\([^)]*\)).*/\1/p')
+        [[ -n "$path" ]] && printf '%d\t%s\n' "$linenum" "$path"
       elif [[ "$line" =~ ^[a-zA-Z] ]]; then
         in_related=0
       fi
@@ -124,17 +140,21 @@ extract_frontmatter_links() {
 # Extract body markdown links pointing to .md files.
 # Links are PROJECT_ROOT-relative (same convention as frontmatter).
 # Only returns links that resolve within DOC_ROOT.
+# Outputs: linenum TAB path
 extract_body_links() {
   local file="$1"
-  local block=0
+  local block=0 linenum=0
   while IFS= read -r line; do
+    linenum=$((linenum + 1))
     if [[ "$line" == "---" ]]; then
       block=$((block + 1)); continue
     fi
     [[ $block -lt 2 ]] && continue
     # Extract all markdown link targets ending in .md from this line using grep+sed
     # grep returns 1 on no match; suppress that to avoid pipefail termination
-    printf '%s\n' "$line" | /usr/bin/grep -o '\[[^]]*\]([^)]*)' | /usr/bin/sed -n 's/.*(\([^)]*\.md[^)]*\))/\1/p' || true
+    while IFS= read -r path; do
+      [[ -n "$path" ]] && printf '%d\t%s\n' "$linenum" "$path"
+    done < <(printf '%s\n' "$line" | /usr/bin/grep -o '\[[^]]*\]([^)]*)' | /usr/bin/sed -n 's/.*(\([^)]*\.md[^)]*\))/\1/p' || true)
   done < "$file"
 }
 
@@ -183,22 +203,25 @@ issue_filename() {
 
 # Write an issue file only if it doesn't already exist.
 # Also registers the filename in CURRENT_ISSUE_FILES.
+# Args: filename type related_doc line_number summary detail
+#   line_number: pass empty string if unknown
 write_issue() {
-  local filename="$1" type="$2" related_doc="$3" summary="$4" detail="$5"
+  local filename="$1" type="$2" related_doc="$3" line_number="$4" summary="$5" detail="$6"
   register_issue_file "$filename"
   [[ -f "$filename" ]] && return
-  cat > "$filename" <<ISSUE
----
-type: $type
-related_doc: "$related_doc"
-created: $TODAY
----
-## Issue
-$summary
-
-## Detail
-$detail
-ISSUE
+  {
+    echo "---"
+    echo "type: $type"
+    echo "related_doc: \"$related_doc\""
+    [[ -n "$line_number" ]] && echo "line_number: $line_number"
+    echo "created: $TODAY"
+    echo "---"
+    echo "## Issue"
+    echo "$summary"
+    echo ""
+    echo "## Detail"
+    echo "$detail"
+  } > "$filename"
 }
 
 # ─── pass 1: collect all links ──────────────────────────────────────────────
@@ -214,16 +237,17 @@ for file in "${DOCBASE_FILES[@]}"; do
   all=()
 
   # Frontmatter links (PROJECT_ROOT-relative)
-  while IFS= read -r path; do
+  while IFS=$'\t' read -r linenum path; do
     [[ -z "$path" ]] && continue
     abs=$(resolve_from_root "$path")
     is_in_doc_root "$abs" || continue
     fm+=("$abs")
     all+=("$abs")
+    set_link_line "$file" "$abs" "$linenum"
   done < <(extract_frontmatter_links "$file")
 
   # Body links (PROJECT_ROOT-relative, same convention as frontmatter)
-  while IFS= read -r path; do
+  while IFS=$'\t' read -r linenum path; do
     [[ -z "$path" ]] && continue
     abs=$(resolve_from_root "$path")
     is_in_doc_root "$abs" || continue
@@ -235,12 +259,13 @@ for file in "${DOCBASE_FILES[@]}"; do
     if ! $in_fm; then
       rel_target="${abs#$PROJECT_ROOT/}"
       fname=$(issue_filename "undeclared-reference" "${rel_source}:${rel_target}")
-      write_issue "$fname" "undeclared-reference" "$rel_source" \
-        "Body link to $rel_target not declared in related: frontmatter" \
-        "The document $rel_source contains a markdown link to $rel_target in its body, but $rel_target is not listed in the related: frontmatter. Add it to make the reference explicit and discoverable."
+      write_issue "$fname" "undeclared-reference" "$rel_source" "$linenum" \
+        "Body link to $rel_target not declared in related: frontmatter (line $linenum)" \
+        "The document $rel_source line $linenum contains a markdown link to $rel_target in its body, but $rel_target is not listed in the related: frontmatter. Add it to make the reference explicit and discoverable."
       UNDECLARED_COUNT=$((UNDECLARED_COUNT + 1))
     fi
     all+=("$abs")
+    set_link_line "$file" "$abs" "$linenum"
   done < <(extract_body_links "$file")
 
   set_fm_targets "$file" "${fm[*]:-}"
@@ -258,10 +283,11 @@ for file in "${DOCBASE_FILES[@]}"; do
     rel_target="${target#$PROJECT_ROOT/}"
 
     if [[ ! -f "$target" ]]; then
+      linenum=$(get_link_line "$file" "$target")
       fname=$(issue_filename "broken-link" "${rel_source}:${rel_target}")
-      write_issue "$fname" "broken-link" "$rel_source" \
-        "Broken link: $rel_target does not exist" \
-        "The document $rel_source references $rel_target, but that file does not exist."
+      write_issue "$fname" "broken-link" "$rel_source" "$linenum" \
+        "Broken link: $rel_target does not exist${linenum:+ (line $linenum)}" \
+        "The document $rel_source${linenum:+ line $linenum} references $rel_target, but that file does not exist."
       BROKEN_COUNT=$((BROKEN_COUNT + 1))
       continue
     fi
