@@ -39,7 +39,7 @@
     {
       "name": "docbase",
       "description": "Documentation-driven development system that enforces docs as the sole source of truth, with automatic cross-reference integrity checking and doc↔code consistency enforcement.",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "author": {
         "name": "@michelsciortino"
       },
