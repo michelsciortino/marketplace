@@ -15,7 +15,7 @@ Find documentation sections with no corresponding implementation and implement s
    Prompt:
    ```
    Scan all .md files under <project_root>/<doc_root> for DocBase frontmatter.
-   For each file, check its `implementation:` entries:
+   For each file, check its `implementation:` entries (values are markdown links `[text](path)` — extract the path from each):
      a. If `implementation:` is absent or empty: this doc has no implementation yet
      b. If `implementation:` lists files: check which ones do not yet exist on disk
    Return JSON:
@@ -47,5 +47,5 @@ Find documentation sections with no corresponding implementation and implement s
    - Present a brief implementation plan (files to create, approach)
    - Ask: "Does this look right? Shall I proceed?"
    - On approval: implement, following the doc spec precisely
-   - After implementation: update the doc's `implementation:` frontmatter with the new file paths
+   - After implementation: update the doc's `implementation:` frontmatter with the new file paths as markdown links, e.g. `"[filename.ts](relative/path/to/file.ts)"`
    - Commit with message: `feat: implement <title> per <doc_path>`

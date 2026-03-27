@@ -19,8 +19,8 @@ List and manage open DocBase issues for the current project.
    For each file, extract:
      - filename
      - type (from frontmatter)
-     - related_doc (from frontmatter)
-     - related_code (from frontmatter)
+     - related_doc (from frontmatter — value is a markdown link `[text](path)`, extract the path)
+     - related_code (from frontmatter — value is a markdown link `[text](path)`, extract the path)
      - created (from frontmatter)
      - first line of the ## Issue section (summary)
    Return JSON array:
